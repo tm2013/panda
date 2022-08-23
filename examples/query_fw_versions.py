@@ -61,8 +61,20 @@ if __name__ == "__main__":
 
       # Run queries against all standard UDS data identifiers, plus selected
       # non-standardized identifier ranges if requested
+      sent_again = False
       resp = {}
-      for uds_data_id in sorted(uds_data_ids):
+      for idx, uds_data_id in enumerate(sorted(uds_data_ids)):
+        if idx > 0x50 and not sent_again:
+          try:
+            uds_client.tester_present()
+            uds_client.diagnostic_session_control(SESSION_TYPE.DEFAULT)
+            uds_client.diagnostic_session_control(SESSION_TYPE.EXTENDED_DIAGNOSTIC)
+            sent_again = True
+          except NegativeResponseError:
+            pass
+          except MessageTimeoutError:
+            continue
+
         try:
           data = uds_client.read_data_by_identifier(uds_data_id)  # type: ignore
           if data:
