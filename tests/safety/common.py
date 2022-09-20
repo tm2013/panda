@@ -36,6 +36,28 @@ class CANPackerPanda(CANPacker):
     return package_can_msg(msg)
 
 
+def add_regen_tests(cls):
+  """Dynamically adds regen tests for all user brake tests."""
+
+  # only rx/user brake tests, not brake command
+  found_tests = [func for func in dir(cls) if func.startswith("test_") and "user_brake" in func]
+  assert len(found_tests) >= 3, "Failed to detect known brake tests"
+
+  for test in found_tests:
+    def _make_regen_test(brake_func):
+      def _regen_test(self):
+        # only for safety modes with a regen message
+        if self._user_regen_msg(0) is None:
+          raise unittest.SkipTest("Safety mode implements no _user_regen_msg")
+
+        getattr(self, brake_func)(self._user_regen_msg, self.safety.get_regen_braking_prev)
+      return _regen_test
+
+    setattr(cls, test.replace("brake", "regen"), _make_regen_test(test))
+
+  return cls
+
+
 class PandaSafetyTestBase(unittest.TestCase):
   @classmethod
   def setUpClass(cls):
@@ -123,6 +145,8 @@ class TorqueSteeringSafetyTestBase(PandaSafetyTestBase):
   MAX_TORQUE = 0
   MAX_RT_DELTA = 0
   RT_INTERVAL = 0
+  MIN_VALID_STEERING_FRAMES = 0
+  MIN_VALID_STEERING_RT_INTERVAL = 0
 
   @classmethod
   def setUpClass(cls):
@@ -161,6 +185,72 @@ class TorqueSteeringSafetyTestBase(PandaSafetyTestBase):
     self.safety.set_controls_allowed(True)
     self._set_prev_torque(0)
     self.assertFalse(self._tx(self._torque_cmd_msg(-self.MAX_RATE_UP - 1)))
+
+  def test_steer_req_bit_frames(self):
+    """
+      Certain safety modes implement some tolerance on their steer request bits matching the
+      requested torque to avoid a steering fault or lockout and maintain torque. This tests:
+        - We can't cut torque for more than one frame
+        - We can't cut torque until at least the minimum number of matching steer_req messages
+        - We can always recover from violations if steer_req=1
+    """
+    if self.MIN_VALID_STEERING_FRAMES == 0:
+      raise unittest.SkipTest("Safety mode does not implement tolerance for steer request bit safety")
+
+    for steer_rate_frames in range(self.MIN_VALID_STEERING_FRAMES * 2):
+      # Reset match count and rt timer to allow cut (valid_steer_req_count, ts_steer_req_mismatch_last)
+      self.safety.init_tests()
+      self.safety.set_timer(self.MIN_VALID_STEERING_RT_INTERVAL)
+
+      self.safety.set_controls_allowed(True)
+      self._set_prev_torque(self.MAX_TORQUE)
+      for _ in range(steer_rate_frames):
+        self.assertTrue(self._tx(self._torque_cmd_msg(self.MAX_TORQUE, steer_req=1)))
+
+      should_tx = steer_rate_frames >= self.MIN_VALID_STEERING_FRAMES
+      self.assertEqual(should_tx, self._tx(self._torque_cmd_msg(self.MAX_TORQUE, steer_req=0)))
+
+      # Keep blocking after one steer_req mismatch
+      for _ in range(100):
+        self.assertFalse(self._tx(self._torque_cmd_msg(self.MAX_TORQUE, steer_req=0)))
+
+      # Make sure we can recover
+      self.assertTrue(self._tx(self._torque_cmd_msg(0, steer_req=1)))
+      self._set_prev_torque(self.MAX_TORQUE)
+      self.assertTrue(self._tx(self._torque_cmd_msg(self.MAX_TORQUE, steer_req=1)))
+
+  def test_steer_req_bit_realtime(self):
+    """
+      Realtime safety for cutting steer request bit. This tests:
+        - That we allow messages with mismatching steer request bit if time from last is >= MIN_VALID_STEERING_RT_INTERVAL
+        - That frame mismatch safety does not interfere with this test
+    """
+    if self.MIN_VALID_STEERING_RT_INTERVAL == 0:
+      raise unittest.SkipTest("Safety mode does not implement tolerance for steer request bit safety")
+
+    for rt_us in np.arange(self.MIN_VALID_STEERING_RT_INTERVAL - 50000, self.MIN_VALID_STEERING_RT_INTERVAL + 50000, 10000):
+      # Reset match count and rt timer (valid_steer_req_count, ts_steer_req_mismatch_last)
+      self.safety.init_tests()
+
+      # Make sure valid_steer_req_count doesn't affect this test
+      self.safety.set_controls_allowed(True)
+      self._set_prev_torque(self.MAX_TORQUE)
+      for _ in range(self.MIN_VALID_STEERING_FRAMES):
+        self.assertTrue(self._tx(self._torque_cmd_msg(self.MAX_TORQUE, steer_req=1)))
+
+      # Normally, sending MIN_VALID_STEERING_FRAMES valid frames should always allow
+      self.safety.set_timer(rt_us)
+      should_tx = rt_us >= self.MIN_VALID_STEERING_RT_INTERVAL
+      self.assertEqual(should_tx, self._tx(self._torque_cmd_msg(self.MAX_TORQUE, steer_req=0)))
+
+      # Keep blocking after one steer_req mismatch
+      for _ in range(100):
+        self.assertFalse(self._tx(self._torque_cmd_msg(self.MAX_TORQUE, steer_req=0)))
+
+      # Make sure we can recover
+      self.assertTrue(self._tx(self._torque_cmd_msg(0, steer_req=1)))
+      self._set_prev_torque(self.MAX_TORQUE)
+      self.assertTrue(self._tx(self._torque_cmd_msg(self.MAX_TORQUE, steer_req=1)))
 
 
 class DriverTorqueSteeringSafetyTest(TorqueSteeringSafetyTestBase):
@@ -358,6 +448,7 @@ class MotorTorqueSteeringSafetyTest(TorqueSteeringSafetyTestBase):
     self.assertTrue(self.safety.get_torque_meas_max() in max_range)
 
 
+@add_regen_tests
 class PandaSafetyTest(PandaSafetyTestBase):
   TX_MSGS: Optional[List[List[int]]] = None
   SCANNED_ADDRS = [*range(0x0, 0x800),                      # Entire 11-bit CAN address space
@@ -380,6 +471,9 @@ class PandaSafetyTest(PandaSafetyTestBase):
 
   @abc.abstractmethod
   def _user_brake_msg(self, brake):
+    pass
+
+  def _user_regen_msg(self, regen):
     pass
 
   @abc.abstractmethod
@@ -474,13 +568,17 @@ class PandaSafetyTest(PandaSafetyTestBase):
     self._rx(self._user_gas_msg(0))
     self.assertTrue(self.safety.get_longitudinal_allowed())
 
-  def test_prev_brake(self):
-    self.assertFalse(self.safety.get_brake_pressed_prev())
+  def test_prev_user_brake(self, _user_brake_msg=None, get_brake_pressed_prev=None):
+    if _user_brake_msg is None:
+      _user_brake_msg = self._user_brake_msg
+      get_brake_pressed_prev = self.safety.get_brake_pressed_prev
+
+    self.assertFalse(get_brake_pressed_prev())
     for pressed in [True, False]:
-      self._rx(self._user_brake_msg(not pressed))
-      self.assertEqual(not pressed, self.safety.get_brake_pressed_prev())
-      self._rx(self._user_brake_msg(pressed))
-      self.assertEqual(pressed, self.safety.get_brake_pressed_prev())
+      self._rx(_user_brake_msg(not pressed))
+      self.assertEqual(not pressed, get_brake_pressed_prev())
+      self._rx(_user_brake_msg(pressed))
+      self.assertEqual(pressed, get_brake_pressed_prev())
 
   def test_enable_control_allowed_from_cruise(self):
     self._rx(self._pcm_status_msg(False))
@@ -500,33 +598,39 @@ class PandaSafetyTest(PandaSafetyTestBase):
       self._rx(self._pcm_status_msg(not engaged))
       self.assertEqual(not engaged, self.safety.get_cruise_engaged_prev())
 
-  def test_allow_brake_at_zero_speed(self):
+  def test_allow_user_brake_at_zero_speed(self, _user_brake_msg=None, get_brake_pressed_prev=None):
+    if _user_brake_msg is None:
+      _user_brake_msg = self._user_brake_msg
+
     # Brake was already pressed
     self._rx(self._speed_msg(0))
-    self._rx(self._user_brake_msg(1))
+    self._rx(_user_brake_msg(1))
     self.safety.set_controls_allowed(1)
-    self._rx(self._user_brake_msg(1))
+    self._rx(_user_brake_msg(1))
     self.assertTrue(self.safety.get_controls_allowed())
     self.assertTrue(self.safety.get_longitudinal_allowed())
-    self._rx(self._user_brake_msg(0))
+    self._rx(_user_brake_msg(0))
     self.assertTrue(self.safety.get_controls_allowed())
     self.assertTrue(self.safety.get_longitudinal_allowed())
     # rising edge of brake should disengage
-    self._rx(self._user_brake_msg(1))
+    self._rx(_user_brake_msg(1))
     self.assertFalse(self.safety.get_controls_allowed())
     self.assertFalse(self.safety.get_longitudinal_allowed())
-    self._rx(self._user_brake_msg(0))  # reset no brakes
+    self._rx(_user_brake_msg(0))  # reset no brakes
 
-  def test_not_allow_brake_when_moving(self):
+  def test_not_allow_user_brake_when_moving(self, _user_brake_msg=None, get_brake_pressed_prev=None):
+    if _user_brake_msg is None:
+      _user_brake_msg = self._user_brake_msg
+
     # Brake was already pressed
-    self._rx(self._user_brake_msg(1))
+    self._rx(_user_brake_msg(1))
     self.safety.set_controls_allowed(1)
     self._rx(self._speed_msg(self.STANDSTILL_THRESHOLD))
-    self._rx(self._user_brake_msg(1))
+    self._rx(_user_brake_msg(1))
     self.assertTrue(self.safety.get_controls_allowed())
     self.assertTrue(self.safety.get_longitudinal_allowed())
     self._rx(self._speed_msg(self.STANDSTILL_THRESHOLD + 1))
-    self._rx(self._user_brake_msg(1))
+    self._rx(_user_brake_msg(1))
     self.assertFalse(self.safety.get_controls_allowed())
     self.assertFalse(self.safety.get_longitudinal_allowed())
     self._rx(self._speed_msg(0))
