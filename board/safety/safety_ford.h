@@ -6,6 +6,7 @@
 #define MSG_ACCDATA_3             0x18A   // TX by OP, ACC/TJA user interface
 #define MSG_Lane_Assist_Data1     0x3CA   // TX by OP, Lane Keep Assist
 #define MSG_LateralMotionControl  0x3D3   // TX by OP, Traffic Jam Assist
+#define MSG_LateralMotionControl2 0x3D6   // TX by OP, BlueCruise
 #define MSG_IPMA_Data             0x3D8   // TX by OP, IPMA and LKAS user interface
 
 // CAN bus numbers.
@@ -22,6 +23,16 @@ const CanMsg FORD_TX_MSGS[] = {
 };
 #define FORD_TX_LEN (sizeof(FORD_TX_MSGS) / sizeof(FORD_TX_MSGS[0]))
 
+const CanMsg FORD_CANFD_TX_MSGS[] = {
+  {MSG_Steering_Data_FD1, 0, 8},
+  {MSG_Steering_Data_FD1, 2, 8},
+  {MSG_ACCDATA_3, 0, 8},
+  {MSG_Lane_Assist_Data1, 0, 8},
+  {MSG_LateralMotionControl2, 0, 8},
+  {MSG_IPMA_Data, 0, 8},
+};
+#define FORD_CANFD_TX_LEN (sizeof(FORD_CANFD_TX_MSGS) / sizeof(FORD_CANFD_TX_MSGS[0]))
+
 AddrCheckStruct ford_addr_checks[] = {
   {.msg = {{MSG_EngBrakeData, 0, 8, .expected_timestep = 100000U}, { 0 }, { 0 }}},
   {.msg = {{MSG_EngVehicleSpThrottle, 0, 8, .expected_timestep = 10000U}, { 0 }, { 0 }}},
@@ -35,10 +46,14 @@ addr_checks ford_rx_checks = {ford_addr_checks, FORD_ADDR_CHECK_LEN};
 #define INACTIVE_PATH_OFFSET 512U
 #define INACTIVE_PATH_ANGLE 1000U
 
+bool ford_canfd = false;
+
+
 static bool ford_lkas_msg_check(int addr) {
   return (addr == MSG_ACCDATA_3)
       || (addr == MSG_Lane_Assist_Data1)
       || (addr == MSG_LateralMotionControl)
+      || (addr == MSG_LateralMotionControl2)
       || (addr == MSG_IPMA_Data);
 }
 
@@ -81,12 +96,13 @@ static int ford_rx_hook(CANPacket_t *to_push) {
 }
 
 static int ford_tx_hook(CANPacket_t *to_send) {
-
   int tx = 1;
   int addr = GET_ADDR(to_send);
 
-  if (!msg_allowed(to_send, FORD_TX_MSGS, FORD_TX_LEN)) {
-    tx = 0;
+  if (ford_canfd) {
+    tx = msg_allowed(to_send, FORD_CANFD_TX_MSGS, FORD_CANFD_TX_LEN);
+  } else {
+    tx = msg_allowed(to_send, FORD_TX_MSGS, FORD_TX_LEN);
   }
 
   // Safety check for Steering_Data_FD1 button signals
