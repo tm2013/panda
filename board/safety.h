@@ -408,6 +408,14 @@ bool long_cmd_enabled_check(int val, const bool longitudinal_allowed) {
   return !longitudinal_allowed && (accel != 0);
 }
 
+bool long_gas_cmd_check(int val, const bool longitudinal_allowed) {
+  return !longitudinal_allowed && (accel != 0);
+}
+
+bool long_brake_cmd_check(int val, const bool longitudinal_allowed) {
+  return !longitudinal_allowed && (accel != 0);
+}
+
 // check that commanded value isn't too far from measured
 bool dist_to_meas_check(int val, int val_last, struct sample_t *val_meas,
                         const int MAX_RATE_UP, const int MAX_RATE_DOWN, const int MAX_ERROR) {

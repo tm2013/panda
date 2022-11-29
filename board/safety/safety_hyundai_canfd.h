@@ -227,8 +227,6 @@ static int hyundai_canfd_rx_hook(CANPacket_t *to_push) {
 }
 
 static int hyundai_canfd_tx_hook(CANPacket_t *to_send, bool longitudinal_allowed) {
-  UNUSED(longitudinal_allowed);
-
   int tx = 0;
   int addr = GET_ADDR(to_send);
 
@@ -278,18 +276,14 @@ static int hyundai_canfd_tx_hook(CANPacket_t *to_send, bool longitudinal_allowed
     bool violation = false;
 
     if (hyundai_longitudinal) {
-      if (!longitudinal_allowed) {
-        if ((desired_accel_raw != 0) || (desired_accel_val != 0)) {
-          violation = true;
-        }
-      }
+      violation |= long_cmd_enabled_check(desired_accel_raw, longitudinal_allowed);
+      violation |= long_cmd_enabled_check(desired_accel_val, longitudinal_allowed);
       violation |= max_limit_check(desired_accel_raw, HYUNDAI_MAX_ACCEL, HYUNDAI_MIN_ACCEL);
       violation |= max_limit_check(desired_accel_val, HYUNDAI_MAX_ACCEL, HYUNDAI_MIN_ACCEL);
     } else {
       // only used to cancel on here
-      if ((desired_accel_raw != 0) || (desired_accel_val != 0)) {
-        violation = true;
-      }
+      violation |= long_cmd_enabled_check(desired_accel_raw, false);
+      violation |= long_cmd_enabled_check(desired_accel_val, false);
     }
 
     if (violation) {
