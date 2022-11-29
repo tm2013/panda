@@ -258,12 +258,8 @@ static int hyundai_tx_hook(CANPacket_t *to_send, bool longitudinal_allowed) {
     int aeb_req = GET_BIT(to_send, 54U);
 
     bool violation = 0;
-
-    if (!longitudinal_allowed) {
-      if ((desired_accel_raw != 0) || (desired_accel_val != 0)) {
-        violation = 1;
-      }
-    }
+    violation |= long_cmd_enabled_check(desired_accel_raw, longitudinal_allowed);
+    violation |= long_cmd_enabled_check(desired_accel_val, longitudinal_allowed);
     violation |= max_limit_check(desired_accel_raw, HYUNDAI_MAX_ACCEL, HYUNDAI_MIN_ACCEL);
     violation |= max_limit_check(desired_accel_val, HYUNDAI_MAX_ACCEL, HYUNDAI_MIN_ACCEL);
 

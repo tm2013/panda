@@ -145,10 +145,8 @@ static int toyota_tx_hook(CANPacket_t *to_send, bool longitudinal_allowed) {
 
     // GAS PEDAL: safety check
     if (addr == 0x200) {
-      if (!longitudinal_allowed) {
-        if (GET_BYTE(to_send, 0) || GET_BYTE(to_send, 1)) {
-          tx = 0;
-        }
+      if (long_cmd_enabled_check(GET_BYTE(to_send, 0) || GET_BYTE(to_send, 1), longitudinal_allowed)) {
+        tx = 0;
       }
     }
 
@@ -156,21 +154,19 @@ static int toyota_tx_hook(CANPacket_t *to_send, bool longitudinal_allowed) {
     if (addr == 0x343) {
       int desired_accel = (GET_BYTE(to_send, 0) << 8) | GET_BYTE(to_send, 1);
       desired_accel = to_signed(desired_accel, 16);
-      if (!longitudinal_allowed || toyota_stock_longitudinal) {
-        if (desired_accel != 0) {
-          tx = 0;
-        }
-      }
+
+      bool violation = false;
+      violation |= long_cmd_enabled_check(desired_accel, longitudinal_allowed);
+      violation |= long_cmd_enabled_check(desired_accel, !toyota_stock_longitudinal);
+      violation |= max_limit_check(desired_accel, TOYOTA_MAX_ACCEL, TOYOTA_MIN_ACCEL);
 
       // only ACC messages that cancel are allowed when openpilot is not controlling longitudinal
       if (toyota_stock_longitudinal) {
         bool cancel_req = GET_BIT(to_send, 24U) != 0U;
         if (!cancel_req) {
-          tx = 0;
+          violation = true;
         }
       }
-
-      bool violation = max_limit_check(desired_accel, TOYOTA_MAX_ACCEL, TOYOTA_MIN_ACCEL);
 
       if (violation) {
         tx = 0;

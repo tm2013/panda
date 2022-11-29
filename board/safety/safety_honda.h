@@ -270,10 +270,12 @@ static int honda_tx_hook(CANPacket_t *to_send, bool longitudinal_allowed) {
   if ((addr == 0x30C) && (bus == bus_pt)) {
     int pcm_speed = (GET_BYTE(to_send, 0) << 8) | GET_BYTE(to_send, 1);
     int pcm_gas = GET_BYTE(to_send, 2);
-    if (!longitudinal_allowed) {
-      if ((pcm_speed != 0) || (pcm_gas != 0)) {
-        tx = 0;
-      }
+
+    bool violation = false;
+    violation |= long_cmd_enabled_check(pcm_speed, longitudinal_allowed);
+    violation |= long_cmd_enabled_check(pcm_gas, longitudinal_allowed);
+    if (violation) {
+      tx = 0;
     }
   }
 
