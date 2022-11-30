@@ -9,8 +9,8 @@ if [ ! -d "$CPPCHECK_DIR" ]; then
 fi
 
 cd $CPPCHECK_DIR
-git fetch
-git checkout e1cff1d1ef92f6a1c6962e0e4153b7353ccad04c
-git -c user.name=a -c user.email="a@b.c" cherry-pick 7199dde1618b5166735f07619dcdb9f4eafdb557
+git fetch --all
+git checkout aca3f6fefa6d6b8c5915f15035c7e5908961f6f1
+#git -c user.name=a -c user.email="a@b.c" cherry-pick 7199dde1618b5166735f07619dcdb9f4eafdb557
 make clean
 make MATCHCOMPILTER=yes CXXFLAGS="-O2" -j8
