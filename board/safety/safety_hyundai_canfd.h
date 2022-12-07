@@ -229,7 +229,7 @@ static int hyundai_canfd_rx_hook(CANPacket_t *to_push) {
       for (int i = 8; i < 15; i+=2) {
         speed += GET_BYTE(to_push, i) | (GET_BYTE(to_push, i + 1) << 8U);
       }
-      hyundai_canfd_vego = ((float)speed / 4.f) * 0.03125;
+      hyundai_canfd_vego = ((float)speed / 4.f) * 0.277778f * 0.03125f;
       vehicle_moving = (speed / 4U) > HYUNDAI_STANDSTILL_THRSLD;
     }
   }
@@ -293,6 +293,9 @@ static int hyundai_canfd_tx_hook(CANPacket_t *to_send) {
         // *** global torque limit check ***
         violation |= max_limit_check(desired_torque, 384, -384);
 
+
+        // ready to blend in limits
+        desired_torque_last = MAX(-270, MIN(desired_torque, 270));
         rt_torque_last = desired_torque;
         ts_torque_check_last = ts;
       }
