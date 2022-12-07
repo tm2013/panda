@@ -1,22 +1,31 @@
 #include "safety_hyundai_common.h"
 
-const SteeringLimits HYUNDAI_CANFD_STEERING_LIMITS = {
-  .max_steer = 270,
-  .max_rt_delta = 112,
-  .max_rt_interval = 250000,
-  .max_rate_up = 2,
-  .max_rate_down = 3,
-  .driver_torque_allowance = 250,
-  .driver_torque_factor = 2,
-  .type = TorqueDriverLimited,
+#define LIMS(steer, rate_up, rate_down) {\
+  .max_steer = steer, \
+  .max_rt_delta = 112, \
+  .max_rt_interval = 250000, \
+  .max_rate_up = rate_up, \
+  .max_rate_down = rate_down, \
+  .driver_torque_allowance = 250, \
+  .driver_torque_factor = 2, \
+  .type = TorqueDriverLimited, \
+  .min_valid_request_frames = 89, \
+  .max_invalid_request_frames = 2, \
+  .min_valid_request_rt_interval = 810000, \
+  .has_steer_req_tolerance = true, \
+}
 
-  // the EPS faults when the steering angle is above a certain threshold for too long. to prevent this,
-  // we allow setting torque actuation bit to 0 while maintaining the requested torque value for two consecutive frames
-  .min_valid_request_frames = 89,
-  .max_invalid_request_frames = 2,
-  .min_valid_request_rt_interval = 810000,  // 810ms; a ~10% buffer on cutting every 90 frames
-  .has_steer_req_tolerance = true,
+typedef struct {
+  float vEgo; // m/s
+  SteeringLimits limits;
+} SteeringLimitBreakpoint;
+
+const SteeringLimitBreakpoint steering_breakpoints[] = {
+  // vEgo (m/s), LIMS - (max torque, rate up, rate down)
+  //{.vEgo = 6.5, .limits = LIMS(384, 2, 3)},
+  {.vEgo = 13.0f, .limits = LIMS(270, 2, 3)},
 };
+
 
 const CanMsg HYUNDAI_CANFD_HDA2_TX_MSGS[] = {
   {0x50, 0, 16},  // LKAS
@@ -119,6 +128,7 @@ const int HYUNDAI_PARAM_CANFD_ALT_BUTTONS = 32;
 bool hyundai_canfd_hda2 = false;
 bool hyundai_canfd_alt_buttons = false;
 
+float hyundai_canfd_vego = 0.;
 
 static uint8_t hyundai_canfd_get_counter(CANPacket_t *to_push) {
   uint8_t ret = 0;
@@ -219,6 +229,7 @@ static int hyundai_canfd_rx_hook(CANPacket_t *to_push) {
       for (int i = 8; i < 15; i+=2) {
         speed += GET_BYTE(to_push, i) | (GET_BYTE(to_push, i + 1) << 8U);
       }
+      hyundai_canfd_vego = ((float)speed / 4.f) * 0.03125;
       vehicle_moving = (speed / 4U) > HYUNDAI_STANDSTILL_THRSLD;
     }
   }
@@ -263,8 +274,51 @@ static int hyundai_canfd_tx_hook(CANPacket_t *to_send) {
     int desired_torque = (((GET_BYTE(to_send, 6) & 0xFU) << 7U) | (GET_BYTE(to_send, 5) >> 1U)) - 1024U;
     bool steer_req = GET_BIT(to_send, 52U) != 0U;
 
-    if (steer_torque_cmd_checks(desired_torque, steer_req, HYUNDAI_CANFD_STEERING_LIMITS)) {
-      tx = 0;
+    // get max torque allowed
+    const int num_breakpoints = (sizeof(steering_breakpoints) / sizeof(steering_breakpoints[0]));
+    int idx = num_breakpoints - 1;
+    for (int i = 0; i < num_breakpoints; i++) {
+      if (hyundai_canfd_vego < steering_breakpoints[i].vEgo) {
+        idx = i;
+        break;
+      }
+    }
+
+    // 2m/s margin
+    if ((hyundai_canfd_vego < (9.f + 2.f))) {
+      bool violation = false;
+      uint32_t ts = microsecond_timer_get();
+
+      if (controls_allowed) {
+        // *** global torque limit check ***
+        violation |= max_limit_check(desired_torque, 384, -384);
+
+        rt_torque_last = desired_torque;
+        ts_torque_check_last = ts;
+      }
+
+      // no torque if controls is not allowed
+      if (!controls_allowed && (desired_torque != 0)) {
+        violation = true;
+      }
+
+      // reset to 0 if either controls is not allowed or there's a violation
+      if (violation || !controls_allowed) {
+        valid_steer_req_count = 0;
+        invalid_steer_req_count = 0;
+        desired_torque_last = 0;
+        rt_torque_last = 0;
+        ts_torque_check_last = ts;
+        ts_steer_req_mismatch_last = ts;
+      }
+
+      if (violation) {
+        tx = 0;
+      }
+    } else {
+      if (steer_torque_cmd_checks(desired_torque, steer_req, steering_breakpoints[idx].limits)) {
+        tx = 0;
+      }
     }
   }
 
