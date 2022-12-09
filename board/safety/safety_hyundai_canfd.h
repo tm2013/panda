@@ -6,7 +6,7 @@
   .max_rt_interval = 250000, \
   .max_rate_up = rate_up, \
   .max_rate_down = rate_down, \
-  .driver_torque_allowance = 250, \
+  .driver_torque_allowance = 175, \
   .driver_torque_factor = 2, \
   .type = TorqueDriverLimited, \
   .min_valid_request_frames = 89, \
