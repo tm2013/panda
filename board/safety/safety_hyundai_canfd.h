@@ -285,7 +285,7 @@ static int hyundai_canfd_tx_hook(CANPacket_t *to_send) {
     }
 
     // 2m/s margin
-    if ((hyundai_canfd_vego < (9.f + 2.f))) {
+    if ((hyundai_canfd_vego < (11.f + 2.f))) {
       bool violation = false;
       uint32_t ts = microsecond_timer_get();
 
