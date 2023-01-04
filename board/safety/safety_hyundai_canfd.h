@@ -6,7 +6,7 @@ const SteeringLimits HYUNDAI_CANFD_STEERING_LIMITS = {
   .max_rt_interval = 250000,
   .max_rate_up = 2,
   .max_rate_down = 3,
-  .driver_torque_allowance = 250,
+  .driver_torque_allowance = 350,
   .driver_torque_factor = 2,
   .type = TorqueDriverLimited,
 
