@@ -1,7 +1,6 @@
 import sys
 import time
 from flaky import flaky
-from nose.tools import assert_equal, assert_less, assert_greater
 
 from panda import Panda
 from .helpers import SPEED_NORMAL, SPEED_GMLAN, time_many_sends, test_white_and_grey, panda_type_to_serial, test_all_pandas, panda_connect_and_init
@@ -55,13 +54,13 @@ def test_reliability(p):
     sent_echo = [x for x in r if x[3] == 0x80]
     loopback_resp = [x for x in r if x[3] == 0]
 
-    assert_equal(sorted([x[0] for x in loopback_resp]), addrs)
-    assert_equal(sorted([x[0] for x in sent_echo]), addrs)
-    assert_equal(len(r), 200)
+    assert sorted([x[0] for x in loopback_resp]) == addrs
+    assert sorted([x[0] for x in sent_echo]) == addrs
+    assert len(r) == 200
 
     # take sub 20ms
     et = (time.monotonic() - st) * 1000.0
-    assert_less(et, 20)
+    assert et < 20
 
     sys.stdout.write("P")
     sys.stdout.flush()
@@ -85,8 +84,8 @@ def test_throughput(p):
 
     # bit count from https://en.wikipedia.org/wiki/CAN_bus
     saturation_pct = (comp_kbps / speed) * 100.0
-    assert_greater(saturation_pct, 80)
-    assert_less(saturation_pct, 100)
+    assert saturation_pct > 80
+    assert saturation_pct < 100
 
     print("loopback 100 messages at speed %d, comp speed is %.2f, percent %.2f" % (speed, comp_kbps, saturation_pct))
 
@@ -105,13 +104,13 @@ def test_gmlan(p):
   for bus in [Panda.GMLAN_CAN2, Panda.GMLAN_CAN3, Panda.GMLAN_CAN2, Panda.GMLAN_CAN3]:
     p.set_gmlan(bus)
     comp_kbps_gmlan = time_many_sends(p, 3)
-    assert_greater(comp_kbps_gmlan, 0.8 * SPEED_GMLAN)
-    assert_less(comp_kbps_gmlan, 1.0 * SPEED_GMLAN)
+    assert comp_kbps_gmlan > (0.8 * SPEED_GMLAN)
+    assert comp_kbps_gmlan < (1.0 * SPEED_GMLAN)
 
     p.set_gmlan(None)
     comp_kbps_normal = time_many_sends(p, bus)
-    assert_greater(comp_kbps_normal, 0.8 * SPEED_NORMAL)
-    assert_less(comp_kbps_normal, 1.0 * SPEED_NORMAL)
+    assert comp_kbps_normal > (0.8 * SPEED_NORMAL)
+    assert comp_kbps_normal < (1.0 * SPEED_NORMAL)
 
     print("%d: %.2f kbps vs %.2f kbps" % (bus, comp_kbps_gmlan, comp_kbps_normal))
 
@@ -126,15 +125,15 @@ def test_gmlan_bad_toggle(p):
   for bus in [Panda.GMLAN_CAN2, Panda.GMLAN_CAN3]:
     p.set_gmlan(bus)
     comp_kbps_gmlan = time_many_sends(p, 3)
-    assert_greater(comp_kbps_gmlan, 0.6 * SPEED_GMLAN)
-    assert_less(comp_kbps_gmlan, 1.0 * SPEED_GMLAN)
+    assert comp_kbps_gmlan > (0.6 * SPEED_GMLAN)
+    assert comp_kbps_gmlan < (1.0 * SPEED_GMLAN)
 
   # normal
   for bus in [Panda.GMLAN_CAN2, Panda.GMLAN_CAN3]:
     p.set_gmlan(None)
     comp_kbps_normal = time_many_sends(p, bus)
-    assert_greater(comp_kbps_normal, 0.6 * SPEED_NORMAL)
-    assert_less(comp_kbps_normal, 1.0 * SPEED_NORMAL)
+    assert comp_kbps_normal > (0.6 * SPEED_NORMAL)
+    assert comp_kbps_normal < (1.0 * SPEED_NORMAL)
 
 
 # this will fail if you have hardware serial connected
@@ -143,4 +142,4 @@ def test_gmlan_bad_toggle(p):
 def test_serial_debug(p):
   _ = p.serial_read(Panda.SERIAL_DEBUG)  # junk
   p.call_control_api(0x01)
-  assert(p.serial_read(Panda.SERIAL_DEBUG).startswith(b"NO HANDLER"))
+  assert p.serial_read(Panda.SERIAL_DEBUG).startswith(b"NO HANDLER")

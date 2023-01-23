@@ -4,10 +4,9 @@ import random
 import threading
 from flaky import flaky
 from collections import defaultdict
-from nose.tools import assert_equal, assert_less, assert_greater
 
 from panda import Panda
-from .helpers import panda_jungle, time_many_sends, test_all_pandas, test_all_gen2_pandas, clear_can_buffers, panda_connect_and_init, PARTIAL_TESTS
+from panda.tests.hitl.helpers import panda_jungle, time_many_sends, test_all_pandas, test_all_gen2_pandas, clear_can_buffers, panda_connect_and_init, PARTIAL_TESTS
 
 @test_all_pandas
 @flaky(max_runs=3, min_passes=1)
@@ -35,8 +34,7 @@ def test_send_recv(p):
         comp_kbps = time_many_sends(p_send, bus, p_recv, two_pandas=True)
 
         saturation_pct = (comp_kbps / speed) * 100.0
-        assert_greater(saturation_pct, 80)
-        assert_less(saturation_pct, 100)
+        assert 80 < saturation_pct < 100
 
         print("two pandas bus {}, 100 messages at speed {:4d}, comp speed is {:7.2f}, {:6.2f}%".format(bus, speed, comp_kbps, saturation_pct))
 
@@ -93,14 +91,14 @@ def test_latency(p):
           if len(r) == 0 or len(r_echo) == 0:
             print("r: {}, r_echo: {}".format(r, r_echo))
 
-          assert_equal(len(r), 1)
-          assert_equal(len(r_echo), 1)
+          assert len(r) == 1
+          assert len(r_echo) == 1
 
           et = (et - st) * 1000.0
           comp_kbps = (1 + 11 + 1 + 1 + 1 + 4 + 8 * 8 + 15 + 1 + 1 + 1 + 7) / et
           latency = et - ((1 + 11 + 1 + 1 + 1 + 4 + 8 * 8 + 15 + 1 + 1 + 1 + 7) / speed)
 
-          assert_less(latency, 5.0)
+          assert latency < 5.0
 
           saturation_pct = (comp_kbps / speed) * 100.0
           latencies.append(latency)
@@ -108,7 +106,7 @@ def test_latency(p):
           saturation_pcts.append(saturation_pct)
 
         average_latency = sum(latencies) / num_messages
-        assert_less(average_latency, 1.0)
+        assert average_latency < 1.0
         average_comp_kbps = sum(comp_kbps_list) / num_messages
         average_saturation_pct = sum(saturation_pcts) / num_messages
 

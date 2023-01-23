@@ -2,8 +2,8 @@ import os
 import time
 import random
 import faulthandler
+import pytest
 from functools import wraps, partial
-from nose.tools import assert_equal
 from parameterized import parameterized, param
 
 from panda import Panda, DEFAULT_H7_FW_FN, DEFAULT_FW_FN, MCU_TYPE_H7
@@ -12,7 +12,6 @@ from panda_jungle import PandaJungle  # pylint: disable=import-error
 SPEED_NORMAL = 500
 SPEED_GMLAN = 33.3
 BUS_SPEEDS = [(0, SPEED_NORMAL), (1, SPEED_NORMAL), (2, SPEED_NORMAL), (3, SPEED_GMLAN)]
-TIMEOUT = 45
 H7_HW_TYPES = [Panda.HW_TYPE_RED_PANDA, Panda.HW_TYPE_RED_PANDA_V2]
 GEN2_HW_TYPES = [Panda.HW_TYPE_BLACK_PANDA, Panda.HW_TYPE_UNO] + H7_HW_TYPES
 GPS_HW_TYPES = [Panda.HW_TYPE_GREY_PANDA, Panda.HW_TYPE_BLACK_PANDA, Panda.HW_TYPE_UNO]
@@ -55,14 +54,14 @@ if PARTIAL_TESTS:
   # * red panda covers STM32H7
   # * black panda covers STM32F4, GEN2, and GPS
   test_pandas = [p for p in _all_pandas if p[1] in (Panda.HW_TYPE_BLACK_PANDA, Panda.HW_TYPE_RED_PANDA)]
-test_all_pandas = parameterized(
-    list(map(lambda x: x[0], test_pandas))  # type: ignore
+test_all_pandas = pytest.mark.parametrize("panda_serials",
+    list(map(lambda x: x[0], test_pandas))
   )
-test_all_gen2_pandas = parameterized(
-    list(map(lambda x: x[0], filter(lambda x: x[1] in GEN2_HW_TYPES, test_pandas)))  # type: ignore
+test_all_gen2_pandas = pytest.mark.parametrize("panda_serials",
+    list(map(lambda x: x[0], filter(lambda x: x[1] in GEN2_HW_TYPES, test_pandas)))
   )
-test_all_gps_pandas = parameterized(
-    list(map(lambda x: x[0], filter(lambda x: x[1] in GPS_HW_TYPES, test_pandas)))  # type: ignore
+test_all_gps_pandas = pytest.mark.parametrize("panda_serials",
+    list(map(lambda x: x[0], filter(lambda x: x[1] in GPS_HW_TYPES, test_pandas)))
   )
 test_white_and_grey = parameterized([
     param(panda_type=Panda.HW_TYPE_WHITE_PANDA),
@@ -97,10 +96,10 @@ def time_many_sends(p, bus, p_recv=None, msg_count=100, msg_id=None, two_pandas=
   resp = [x for x in r if x[3] == bus and x[0] == msg_id]
 
   leftovers = [x for x in r if (x[3] != 0x80 | bus and x[3] != bus) or x[0] != msg_id]
-  assert_equal(len(leftovers), 0)
+  assert len(leftovers) == 0
 
-  assert_equal(len(resp), msg_count)
-  assert_equal(len(sent_echo), msg_count)
+  assert len(resp) == msg_count
+  assert len(sent_echo) == msg_count
 
   end_time = (end_time - start_time) * 1000.0
   comp_kbps = (1 + 11 + 1 + 1 + 1 + 4 + 8 * 8 + 15 + 1 + 1 + 1 + 7) * msg_count / end_time
@@ -133,6 +132,8 @@ def panda_type_to_serial(fn):
 def panda_connect_and_init(fn=None, full_reset=True):
   if not fn:
     return partial(panda_connect_and_init, full_reset=full_reset)
+
+  print("connect and init")
 
   @wraps(fn)
   def wrapper(panda_serials=None, **kwargs):
@@ -228,4 +229,4 @@ def check_signature(p):
   fn = DEFAULT_H7_FW_FN if p.get_mcu_type() == MCU_TYPE_H7 else DEFAULT_FW_FN
   firmware_sig = Panda.get_signature_from_firmware(fn)
   panda_sig = p.get_signature()
-  assert_equal(panda_sig, firmware_sig)
+  assert panda_sig == firmware_sig
