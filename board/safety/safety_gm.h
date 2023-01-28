@@ -40,10 +40,8 @@ const CanMsg GM_ASCM_TX_MSGS[] = {{384, 0, 4}, {1033, 0, 7}, {1034, 0, 7}, {715,
 const CanMsg GM_CAM_TX_MSGS[] = {{384, 0, 4}, {512, 0, 6},  // pt bus
                                  {481, 2, 7}, {388, 2, 8}};  // camera bus
 
-const CanMsg GM_CAM_LONG_TX_MSGS[] = {{384, 0, 4}, {789, 0, 5}, {715, 0, 8}, {880, 0, 6},  // pt bus
+const CanMsg GM_CAM_LONG_TX_MSGS[] = {{384, 0, 4}, {789, 0, 5}, {715, 0, 8}, {880, 0, 6}, {512, 0, 6},  // pt bus
                                       {388, 2, 8}};  // camera bus
-
-const CanMsg GM_CAM_CC_TX_MSGS[] = {{384, 0, 4}, {481, 0, 7}, {512, 0, 6}};  // pt bus
 
 // TODO: do checksum and counter checks. Add correct timestep, 0.1s for now.
 AddrCheckStruct gm_addr_checks[] = {
@@ -58,7 +56,6 @@ addr_checks gm_rx_checks = {gm_addr_checks, GM_RX_CHECK_LEN};
 
 const uint16_t GM_PARAM_HW_CAM = 1;
 const uint16_t GM_PARAM_HW_CAM_LONG = 2;
-const uint16_t GM_PARAM_HW_CAM_CC = 4;
 
 enum {
   GM_BTN_UNPRESS = 1,
@@ -67,7 +64,7 @@ enum {
   GM_BTN_CANCEL = 6,
 };
 
-enum {GM_ASCM, GM_CAM, GM_CAM_CC} gm_hw = GM_ASCM;
+enum {GM_ASCM, GM_CAM} gm_hw = GM_ASCM;
 bool gm_cam_long = false;
 bool gm_pcm_cruise = false;
 
@@ -121,10 +118,6 @@ static int gm_rx_hook(CANPacket_t *to_push) {
       brake_pressed = GET_BIT(to_push, 40U) != 0U;
     }
 
-    if ((addr == 241) && (gm_hw == GM_CAM_CC)) {
-      brake_pressed = GET_BYTE(to_push, 1) >= 8U;
-    }
-
     if (addr == 452) {
       if (!gas_interceptor_detected) {
         gas_pressed = GET_BYTE(to_push, 5) != 0U;
@@ -175,8 +168,6 @@ static int gm_tx_hook(CANPacket_t *to_send) {
   if (gm_hw == GM_CAM) {
     if (gm_cam_long) {
       tx = msg_allowed(to_send, GM_CAM_LONG_TX_MSGS, sizeof(GM_CAM_LONG_TX_MSGS)/sizeof(GM_CAM_LONG_TX_MSGS[0]));
-    } else if (gm_hw == GM_CAM_CC) {
-      tx = msg_allowed(to_send, GM_CAM_CC_TX_MSGS, sizeof(GM_CAM_CC_TX_MSGS)/sizeof(GM_CAM_CC_TX_MSGS[0]));
     } else {
       tx = msg_allowed(to_send, GM_CAM_TX_MSGS, sizeof(GM_CAM_TX_MSGS)/sizeof(GM_CAM_TX_MSGS[0]));
     }
@@ -243,7 +234,7 @@ static int gm_fwd_hook(int bus_num, CANPacket_t *to_fwd) {
 
   int bus_fwd = -1;
 
-  if (gm_hw == GM_CAM || gm_hw == GM_CAM_CC) {
+  if (gm_hw == GM_CAM) {
     int addr = GET_ADDR(to_fwd);
     if (bus_num == 0) {
       // block PSCMStatus; forwarded through openpilot to hide an alert from the camera
@@ -269,16 +260,11 @@ static int gm_fwd_hook(int bus_num, CANPacket_t *to_fwd) {
 
 static const addr_checks* gm_init(uint16_t param) {
   gm_hw = GET_FLAG(param, GM_PARAM_HW_CAM) ? GM_CAM : GM_ASCM;
-  if (gm_hw == GM_CAM && GET_FLAG(param, GM_PARAM_HW_CAM_CC)) {
-    gm_hw = GM_CAM_CC;
-  }
 
   if (gm_hw == GM_ASCM) {
     gm_long_limits = &GM_ASCM_LONG_LIMITS;
   } else if (gm_hw == GM_CAM) {
     gm_long_limits = &GM_CAM_LONG_LIMITS;
-  } else if (gm_hw == GM_CAM_CC) {
-    gm_long_limits = &GM_ASCM_LONG_LIMITS;
   } else {
   }
 
