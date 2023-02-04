@@ -65,36 +65,20 @@ static int alloutput_tx_lin_hook(int lin_num, uint8_t *data, int len) {
   return true;
 }
 
-//static int alloutput_fwd_hook(int bus_num, CANPacket_t *to_fwd) {
-//  UNUSED(to_fwd);
-//  int bus_fwd = -1;
-//
-//  if (alloutput_passthrough) {
-//    if (bus_num == 0) {
-//      bus_fwd = 2;
-//    }
-//    if (bus_num == 2) {
-//      bus_fwd = 0;
-//    }
-//  }
-//
-//  return bus_fwd;
-//}
-
 static int alloutput_fwd_hook(int bus_num, CANPacket_t *to_fwd) {
-
+  UNUSED(to_fwd);
   int bus_fwd = -1;
 
-  int addr = GET_ADDR(to_fwd);
-  if (bus_num == 0) {
-    bus_fwd = 2;
-  }
-
-  if (bus_num == 2) {
-    // block lkas message, forward all others
-    bool is_lkas_msg = (addr == 384);
-    if (!is_lkas_msg) {
-      bus_fwd = 0;
+  if (alloutput_passthrough) {
+    if (bus_num == 0) {
+      bus_fwd = 2;
+    }
+    if (bus_num == 2) {
+      // block lkas message, forward all others
+      bool is_lkas_msg = (addr == 384);
+      if (!is_lkas_msg) {
+        bus_fwd = 0;
+      }
     }
   }
 
